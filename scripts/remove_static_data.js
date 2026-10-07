@@ -68,6 +68,10 @@ async function removeStaticData() {
   const studentDeleteResult = db.prepare(`DELETE FROM students WHERE email IN (${placeholders})`).run(...SEED_EMAILS);
   console.log(`✅ SQLite: Deleted ${studentDeleteResult.changes} mock/seed students.`);
 
+  // Remove test students created by test suite runs
+  const testStudentDel = db.prepare(`DELETE FROM students WHERE import_source IN ('Bulk 500 Test File.xlsx', 'IIT_Bombay_Placement_Drive.xlsx')`).run();
+  console.log(`✅ SQLite: Deleted ${testStudentDel.changes} test suite student records.`);
+
   // Remove mock/test campaigns & their recipients
   const testCampaigns = db.prepare(`
     SELECT id, title FROM campaigns 

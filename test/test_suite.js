@@ -38,15 +38,14 @@ async function runTestSuite() {
     }
   }
 
-  // 1. Database & Seed Verification
-  test('Database & Seed: DB initializes and contains seed students', () => {
+  // 1. Database Schema Verification
+  test('Database: DB initializes schema and required tables exist', () => {
     const db = getDb();
-    seedDatabase();
-    const studentsCount = db.prepare('SELECT count(*) as count FROM students').get().count;
-    assert(studentsCount >= 40, `Expected at least 40 seed students, got ${studentsCount}`);
-
-    const templatesCount = db.prepare('SELECT count(*) as count FROM templates').get().count;
-    assert(templatesCount >= 6, `Expected at least 6 recruitment templates, got ${templatesCount}`);
+    const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(t => t.name);
+    assert(tables.includes('students'), 'Expected students table to exist');
+    assert(tables.includes('templates'), 'Expected templates table to exist');
+    assert(tables.includes('campaigns'), 'Expected campaigns table to exist');
+    assert(tables.includes('users'), 'Expected users table to exist');
   });
 
   // 2. Personalization Template Engine
@@ -123,77 +122,103 @@ async function runTestSuite() {
   // 4. Blast Campaign Queue & Execution
   await testAsync('Blast Manager: Creates campaign and records delivery outcomes', async () => {
     const db = getDb();
-    
-    // Pick 3 students
-    const testStudents = db.prepare('SELECT * FROM students LIMIT 3').all();
-    
-    const campStmt = db.prepare(`
-      INSERT INTO campaigns (title, subject, body_html, target_type, total_recipients, status)
-      VALUES (?, ?, ?, 'all', ?, 'draft')
-    `);
+    let campId;
+    try {
+      // Create 3 temporary test students
+      const tempStudents = [
+        { name: 'Test Student 1', email: 'test1@testblast.org', college: 'Test Institute' },
+        { name: 'Test Student 2', email: 'test2@testblast.org', college: 'Test Institute' },
+        { name: 'Test Student 3', email: 'test3@testblast.org', college: 'Test Institute' }
+      ];
+      const insStudent = db.prepare('INSERT INTO students (name, email, college) VALUES (?, ?, ?)');
+      const testStudents = tempStudents.map(s => {
+        const info = insStudent.run(s.name, s.email, s.college);
+        return { id: info.lastInsertRowid, ...s };
+      });
+      
+      const campStmt = db.prepare(`
+        INSERT INTO campaigns (title, subject, body_html, target_type, total_recipients, status)
+        VALUES (?, ?, ?, 'all', ?, 'draft')
+      `);
 
-    const campRes = campStmt.run(
-      'Automated Test Blast',
-      'Test Invitation for {Name}',
-      '<p>Hello {Name} from {College}</p>',
-      testStudents.length
-    );
+      const campRes = campStmt.run(
+        'Automated Test Blast',
+        'Test Invitation for {Name}',
+        '<p>Hello {Name} from {College}</p>',
+        testStudents.length
+      );
 
-    const campId = campRes.lastInsertRowid;
+      campId = campRes.lastInsertRowid;
 
-    const recipStmt = db.prepare(`
-      INSERT INTO campaign_recipients (campaign_id, student_id, recipient_name, recipient_email, recipient_college, status)
-      VALUES (?, ?, ?, ?, ?, 'pending')
-    `);
+      const recipStmt = db.prepare(`
+        INSERT INTO campaign_recipients (campaign_id, student_id, recipient_name, recipient_email, recipient_college, status)
+        VALUES (?, ?, ?, ?, ?, 'pending')
+      `);
 
-    for (const s of testStudents) {
-      recipStmt.run(campId, s.id, s.name, s.email, s.college);
-    }
-
-    // Run campaign
-    await blastManager.startCampaign(campId);
-
-    // Wait for completion
-    let attempts = 0;
-    while (attempts < 240) {
-      const c = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campId);
-      if (c.status === 'completed' || c.status === 'cancelled') {
-        break;
+      for (const s of testStudents) {
+        recipStmt.run(campId, s.id, s.name, s.email, s.college);
       }
-      await new Promise(r => setTimeout(r, 250));
-      attempts++;
-    }
 
-    const finalCamp = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campId);
-    assert.strictEqual(finalCamp.status, 'completed', 'Campaign did not complete successfully');
-    assert.strictEqual(finalCamp.sent_count, 3, `Expected 3 sent emails, got ${finalCamp.sent_count}`);
+      // Run campaign
+      await blastManager.startCampaign(campId);
+
+      // Wait for completion
+      let attempts = 0;
+      while (attempts < 240) {
+        const c = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campId);
+        if (c.status === 'completed' || c.status === 'cancelled') {
+          break;
+        }
+        await new Promise(r => setTimeout(r, 250));
+        attempts++;
+      }
+
+      const finalCamp = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campId);
+      assert.strictEqual(finalCamp.status, 'completed', 'Campaign did not complete successfully');
+      assert.strictEqual(finalCamp.sent_count, 3, `Expected 3 sent emails, got ${finalCamp.sent_count}`);
+    } finally {
+      // Clean up test campaign and temporary student records
+      if (campId) {
+        db.prepare('DELETE FROM campaign_recipients WHERE campaign_id = ?').run(campId);
+        db.prepare('DELETE FROM campaigns WHERE id = ?').run(campId);
+      }
+      db.prepare('DELETE FROM students WHERE email IN (?, ?, ?)').run('test1@testblast.org', 'test2@testblast.org', 'test3@testblast.org');
+    }
   });
 
   // 5. 1-Click Retry Failed Logic
   test('Blast Manager: 1-Click Retry re-queues failed recipients without duplicate sends', () => {
     const db = getDb();
+    let campId;
+    try {
+      // Create a mock campaign with 1 failed and 2 sent recipients
+      const campRes = db.prepare(`
+        INSERT INTO campaigns (title, subject, body_html, total_recipients, sent_count, success_count, failed_count, status)
+        VALUES ('Retry Test Campaign', 'Subject', 'Body', 3, 3, 2, 1, 'completed')
+      `).run();
 
-    // Create a mock campaign with 1 failed and 2 sent recipients
-    const campRes = db.prepare(`
-      INSERT INTO campaigns (title, subject, body_html, total_recipients, sent_count, success_count, failed_count, status)
-      VALUES ('Retry Test Campaign', 'Subject', 'Body', 3, 3, 2, 1, 'completed')
-    `).run();
+      campId = campRes.lastInsertRowid;
 
-    const campId = campRes.lastInsertRowid;
+      db.prepare(`INSERT INTO campaign_recipients (campaign_id, recipient_name, recipient_email, status) VALUES (?, 'Sent 1', 's1@test.com', 'sent')`).run(campId);
+      db.prepare(`INSERT INTO campaign_recipients (campaign_id, recipient_name, recipient_email, status) VALUES (?, 'Sent 2', 's2@test.com', 'sent')`).run(campId);
+      db.prepare(`INSERT INTO campaign_recipients (campaign_id, recipient_name, recipient_email, status, error_message) VALUES (?, 'Failed 1', 'f1@test.com', 'failed', 'Connection timeout')`).run(campId);
 
-    db.prepare(`INSERT INTO campaign_recipients (campaign_id, recipient_name, recipient_email, status) VALUES (?, 'Sent 1', 's1@test.com', 'sent')`).run(campId);
-    db.prepare(`INSERT INTO campaign_recipients (campaign_id, recipient_name, recipient_email, status) VALUES (?, 'Sent 2', 's2@test.com', 'sent')`).run(campId);
-    db.prepare(`INSERT INTO campaign_recipients (campaign_id, recipient_name, recipient_email, status, error_message) VALUES (?, 'Failed 1', 'f1@test.com', 'failed', 'Connection timeout')`).run(campId);
+      const retryRes = blastManager.retryFailed(campId);
+      assert.strictEqual(retryRes.success, true, 'Retry failed to initiate');
+      assert.strictEqual(retryRes.retriedCount, 1, 'Expected exactly 1 failed recipient to be re-queued');
 
-    const retryRes = blastManager.retryFailed(campId);
-    assert.strictEqual(retryRes.success, true, 'Retry failed to initiate');
-    assert.strictEqual(retryRes.retriedCount, 1, 'Expected exactly 1 failed recipient to be re-queued');
+      const updatedCamp = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campId);
+      assert.strictEqual(updatedCamp.failed_count, 0, 'Failed count not reset on campaign');
 
-    const updatedCamp = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(campId);
-    assert.strictEqual(updatedCamp.failed_count, 0, 'Failed count not reset on campaign');
-
-    const pendingCount = db.prepare("SELECT count(*) as c FROM campaign_recipients WHERE campaign_id = ? AND status = 'pending'").get(campId).c;
-    assert.strictEqual(pendingCount, 1, 'Failed recipient not changed to pending');
+      const pendingCount = db.prepare("SELECT count(*) as c FROM campaign_recipients WHERE campaign_id = ? AND status = 'pending'").get(campId).c;
+      assert.strictEqual(pendingCount, 1, 'Failed recipient not changed to pending');
+    } finally {
+      // Clean up test campaign records
+      if (campId) {
+        db.prepare('DELETE FROM campaign_recipients WHERE campaign_id = ?').run(campId);
+        db.prepare('DELETE FROM campaigns WHERE id = ?').run(campId);
+      }
+    }
   });
 
   // 6. 500+ Bulk Record Saving Test
@@ -244,6 +269,9 @@ async function runTestSuite() {
 
     const afterCount = db.prepare('SELECT COUNT(*) as c FROM students').get().c;
     assert.strictEqual(afterCount, beforeCount + 500, `Expected ${beforeCount + 500} students, got ${afterCount}`);
+
+    // Clean up inserted test students
+    db.prepare('DELETE FROM students WHERE import_batch_id = ?').run(testBatchId);
   });
 
   // 7. SMTP Password / App Password Persistence Test
@@ -280,6 +308,9 @@ async function runTestSuite() {
 
     const batchStudents = db.prepare('SELECT * FROM students WHERE import_batch_id = ?').all(batchId);
     assert.strictEqual(batchStudents.length, 5, 'Expected 5 students in test bulk upload batch');
+
+    // Clean up test students
+    db.prepare('DELETE FROM students WHERE import_batch_id = ?').run(batchId);
   });
 
   // 9. Delete All Data of One Bulk Upload Test
