@@ -63,10 +63,6 @@ const StudentsView = {
 
           <select class="form-select" style="width: auto; min-width: 120px;" id="filterBatch" onchange="StudentsView.handleFilterBatch(this.value)">
             <option value="">All Batches</option>
-            <option value="2027">Batch 2027</option>
-            <option value="2026">Batch 2026</option>
-            <option value="2025">Batch 2025</option>
-            <option value="2024">Batch 2024</option>
           </select>
         </div>
 
@@ -139,6 +135,15 @@ const StudentsView = {
         collegeSelect.innerHTML = `<option value="">All Colleges (${this.state.total})</option>` +
           (this.state.filterOptions.colleges || []).map(c => `
             <option value="${c.college}" ${this.state.college === c.college ? 'selected' : ''}>${c.college} (${c.count})</option>
+          `).join('');
+      }
+
+      // Populate batch filter if not already populated
+      const filterBatchSelect = document.getElementById('filterBatch');
+      if (filterBatchSelect && (filterBatchSelect.options.length <= 1 || !this.state.batch)) {
+        filterBatchSelect.innerHTML = `<option value="">All Batches</option>` +
+          (this.state.filterOptions.batches || []).map(b => `
+            <option value="${b}" ${this.state.batch === String(b) ? 'selected' : ''}>Batch ${b}</option>
           `).join('');
       }
 

@@ -8,16 +8,14 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { getDb } = require('./database/db');
-const { seedDatabase } = require('./database/seed');
 const { getPersistentMongoDb } = require('./database/mongo');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Database & ensure seed data is loaded
+// Initialize Database (schema & settings)
 try {
   getDb();
-  seedDatabase();
 
   // Connect to MongoDB Atlas
   getPersistentMongoDb().catch(err => {
