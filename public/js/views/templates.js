@@ -177,12 +177,12 @@ const TemplatesView = {
         <form id="templateEditForm" onsubmit="TemplatesView.submitSaveTemplate(event)">
           <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 14px; margin-bottom: 14px;">
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">Template Name *</label>
-              <input type="text" name="name" class="form-input" required value="${template.name}" placeholder="e.g. 2026 Campus Drive Round 1 Invitation" />
+              <label class="form-label" for="tplModalName">Template Name *</label>
+              <input type="text" id="tplModalName" name="name" class="form-input" required value="${template.name}" placeholder="e.g. 2026 Campus Drive Round 1 Invitation" />
             </div>
             <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">Category</label>
-              <select name="category" class="form-select">
+              <label class="form-label" for="tplModalCategory">Category</label>
+              <select id="tplModalCategory" name="category" class="form-select">
                 <option value="Placement Drive" ${template.category === 'Placement Drive' ? 'selected' : ''}>Placement Drive</option>
                 <option value="Internship" ${template.category === 'Internship' ? 'selected' : ''}>Internship</option>
                 <option value="Interview" ${template.category === 'Interview' ? 'selected' : ''}>Interview</option>
@@ -203,12 +203,12 @@ const TemplatesView = {
           </div>
 
           <div class="form-group">
-            <label class="form-label">Email Subject Line *</label>
+            <label class="form-label" for="tplModalSubject">Email Subject Line *</label>
             <input type="text" name="subject" id="tplModalSubject" class="form-input" style="font-weight: 600;" required value="${template.subject}" placeholder="e.g. Invitation for {Name} - Aparaitech Drive" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Email Body (HTML Content) *</label>
+            <label class="form-label" for="tplModalBody">Email Body (HTML Content) *</label>
             <textarea name="body_html" id="tplModalBody" class="form-input" style="font-family: var(--font-mono); font-size: 0.84rem; min-height: 220px; line-height: 1.4;" required>${template.body_html}</textarea>
           </div>
 
@@ -235,18 +235,21 @@ const TemplatesView = {
   },
 
   async submitSaveTemplate(event) {
-    event.preventDefault();
-    const form = event.target;
+    if (event) event.preventDefault();
+    const form = event ? event.target : document.getElementById('templateEditForm');
     const submitBtn = document.getElementById('btnSaveTplModal');
     if (submitBtn) submitBtn.disabled = true;
 
     try {
-      const payload = {
-        name: form.name.value.trim(),
-        category: form.category.value,
-        subject: form.subject.value.trim(),
-        body_html: form.body_html.value
-      };
+      const name = (document.getElementById('tplModalName')?.value || form?.elements['name']?.value || '').trim();
+      const category = document.getElementById('tplModalCategory')?.value || form?.elements['category']?.value || 'Placement Drive';
+      const subject = (document.getElementById('tplModalSubject')?.value || form?.elements['subject']?.value || '').trim();
+      const body_html = document.getElementById('tplModalBody')?.value || form?.elements['body_html']?.value || '';
+
+      if (!name) throw new Error('Template name is required.');
+      if (!subject) throw new Error('Subject line is required.');
+
+      const payload = { name, category, subject, body_html };
 
       if (this.state.editingTemplateId) {
         await api.updateTemplate(this.state.editingTemplateId, payload);
@@ -258,6 +261,7 @@ const TemplatesView = {
 
       app.closeModal();
       await this.render(document.getElementById('viewContainer'));
+      await app.refreshCounters();
     } catch (err) {
       if (submitBtn) submitBtn.disabled = false;
       app.showToast(err.message, 'error', 'Save Failed');

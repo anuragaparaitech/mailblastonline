@@ -258,29 +258,29 @@ const EmployeesView = {
 
         <form id="addEmployeeForm" onsubmit="EmployeesView.submitAddEmployee(event)">
           <div class="form-group">
-            <label class="form-label">Full Name *</label>
-            <input type="text" name="name" class="form-input" required placeholder="e.g. Shruti Kulkarni" />
+            <label class="form-label" for="addEmpName">Full Name *</label>
+            <input type="text" id="addEmpName" name="name" class="form-input" required placeholder="e.g. Shruti Kulkarni" autocomplete="off" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Email Address (Login Username) *</label>
-            <input type="email" name="email" class="form-input" required placeholder="e.g. shruti.emp@aparaitech.org" />
+            <label class="form-label" for="addEmpEmail">Email Address (Login Username) *</label>
+            <input type="email" id="addEmpEmail" name="email" class="form-input" required placeholder="e.g. shruti.emp@aparaitech.org" autocomplete="off" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Password *</label>
-            <input type="password" name="password" class="form-input" required placeholder="Enter login password" value="emp123" />
+            <label class="form-label" for="addEmpPassword">Password *</label>
+            <input type="password" id="addEmpPassword" name="password" class="form-input" required placeholder="Enter login password" value="emp123" />
             <small style="color: var(--text-muted); font-size: 0.74rem;">Default: emp123 (can be changed anytime)</small>
           </div>
 
           <div class="form-group">
-            <label class="form-label">Department / Branch</label>
-            <input type="text" name="department" class="form-input" value="Campus Recruitment" placeholder="e.g. Tech Hiring, Campus Outreach" />
+            <label class="form-label" for="addEmpDepartment">Department / Branch</label>
+            <input type="text" id="addEmpDepartment" name="department" class="form-input" value="Campus Recruitment" placeholder="e.g. Tech Hiring, Campus Outreach" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Role</label>
-            <select name="role" class="form-select">
+            <label class="form-label" for="addEmpRole">Role</label>
+            <select id="addEmpRole" name="role" class="form-select">
               <option value="employee" selected>Employee (Personal Data &amp; Private SMTP)</option>
               <option value="admin">Administrator (Full System Access)</option>
             </select>
@@ -298,27 +298,37 @@ const EmployeesView = {
   },
 
   async submitAddEmployee(event) {
-    event.preventDefault();
-    const form = event.target;
+    if (event) event.preventDefault();
+    const form = event ? event.target : document.getElementById('addEmployeeForm');
     const submitBtn = document.getElementById('btnSubmitEmployee');
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Adding Employee...';
+    }
 
     try {
-      const payload = {
-        name: form.name.value.trim(),
-        email: form.email.value.trim(),
-        password: form.password.value.trim(),
-        department: form.department.value.trim(),
-        role: form.role.value
-      };
+      const name = (document.getElementById('addEmpName')?.value || form?.elements['name']?.value || '').trim();
+      const email = (document.getElementById('addEmpEmail')?.value || form?.elements['email']?.value || '').trim();
+      const password = (document.getElementById('addEmpPassword')?.value || form?.elements['password']?.value || '').trim();
+      const department = (document.getElementById('addEmpDepartment')?.value || form?.elements['department']?.value || 'Campus Recruitment').trim();
+      const role = document.getElementById('addEmpRole')?.value || form?.elements['role']?.value || 'employee';
 
+      if (!name) throw new Error('Please enter employee full name.');
+      if (!email) throw new Error('Please enter a valid corporate email address.');
+      if (!password) throw new Error('Please enter a password for this employee.');
+
+      const payload = { name, email, password, department, role };
       const res = await api.createEmployee(payload);
+
       app.closeModal();
-      app.showToast(res.message || 'Employee created successfully!', 'success', 'Staff Added');
+      app.showToast(res.message || `Employee "${name}" added successfully!`, 'success', 'Staff Added');
       await this.render(document.getElementById('viewContainer'));
       await app.refreshCounters();
     } catch (err) {
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create Employee Account';
+      }
       app.showToast(err.message, 'error', 'Error Adding Staff');
     }
   },
@@ -335,28 +345,28 @@ const EmployeesView = {
       <div class="modal-body">
         <form id="editEmployeeForm" onsubmit="EmployeesView.submitEditEmployee(event, ${user.id})">
           <div class="form-group">
-            <label class="form-label">Full Name *</label>
-            <input type="text" name="name" class="form-input" required value="${user.name}" />
+            <label class="form-label" for="editEmpName">Full Name *</label>
+            <input type="text" id="editEmpName" name="name" class="form-input" required value="${user.name}" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Email Address *</label>
-            <input type="email" name="email" class="form-input" required value="${user.email}" />
+            <label class="form-label" for="editEmpEmail">Email Address *</label>
+            <input type="email" id="editEmpEmail" name="email" class="form-input" required value="${user.email}" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">New Password (leave blank to keep current)</label>
-            <input type="password" name="password" class="form-input" placeholder="••••••••" />
+            <label class="form-label" for="editEmpPassword">New Password (leave blank to keep current)</label>
+            <input type="password" id="editEmpPassword" name="password" class="form-input" placeholder="••••••••" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Department / Branch</label>
-            <input type="text" name="department" class="form-input" value="${user.department || ''}" />
+            <label class="form-label" for="editEmpDepartment">Department / Branch</label>
+            <input type="text" id="editEmpDepartment" name="department" class="form-input" value="${user.department || ''}" />
           </div>
 
           <div class="form-group">
-            <label class="form-label">Account Status</label>
-            <select name="status" class="form-select">
+            <label class="form-label" for="editEmpStatus">Account Status</label>
+            <select id="editEmpStatus" name="status" class="form-select">
               <option value="active" ${user.status === 'active' ? 'selected' : ''}>Active (Consumes 1 slot)</option>
               <option value="inactive" ${user.status === 'inactive' ? 'selected' : ''}>Inactive (Deactivated)</option>
             </select>
@@ -374,21 +384,27 @@ const EmployeesView = {
   },
 
   async submitEditEmployee(event, userId) {
-    event.preventDefault();
-    const form = event.target;
+    if (event) event.preventDefault();
+    const form = event ? event.target : document.getElementById('editEmployeeForm');
     const submitBtn = document.getElementById('btnSaveEmployee');
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.textContent = 'Saving...';
+    }
 
     try {
-      const payload = {
-        name: form.name.value.trim(),
-        email: form.email.value.trim(),
-        department: form.department.value.trim(),
-        status: form.status.value
-      };
+      const name = (document.getElementById('editEmpName')?.value || form?.elements['name']?.value || '').trim();
+      const email = (document.getElementById('editEmpEmail')?.value || form?.elements['email']?.value || '').trim();
+      const department = (document.getElementById('editEmpDepartment')?.value || form?.elements['department']?.value || '').trim();
+      const status = document.getElementById('editEmpStatus')?.value || form?.elements['status']?.value || 'active';
+      const password = (document.getElementById('editEmpPassword')?.value || form?.elements['password']?.value || '').trim();
 
-      if (form.password.value && form.password.value.trim()) {
-        payload.password = form.password.value.trim();
+      if (!name) throw new Error('Please enter employee full name.');
+      if (!email) throw new Error('Please enter employee email.');
+
+      const payload = { name, email, department, status };
+      if (password) {
+        payload.password = password;
       }
 
       const res = await api.updateEmployee(userId, payload);
@@ -397,7 +413,10 @@ const EmployeesView = {
       await this.render(document.getElementById('viewContainer'));
       await app.refreshCounters();
     } catch (err) {
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Save Changes';
+      }
       app.showToast(err.message, 'error', 'Error Updating Staff');
     }
   },
@@ -425,7 +444,12 @@ const EmployeesView = {
     app.showToast(`Switched active session to: ${user.name} (${user.role.toUpperCase()})`, 'success', 'Account Switched');
     
     // Refresh header and reload current view
-    await app.refreshUserHeader();
+    if (typeof app.refreshUserHeader === 'function') {
+      app.refreshUserHeader();
+    } else {
+      app.updateUserUI();
+    }
+    await app.refreshCounters();
     app.navigate('dashboard');
   }
 };

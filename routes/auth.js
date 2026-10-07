@@ -105,14 +105,30 @@ router.get('/users', (req, res) => {
 router.post('/users', (req, res) => {
   try {
     const db = getDb();
-    const { name, email, password, department = 'Campus Recruitment', role = 'employee' } = req.body;
+    const { name, email, password, department = 'Campus Recruitment', role = 'employee' } = req.body || {};
 
     if (!name || !email || !password) {
       return res.status(400).json({ success: false, message: 'Full name, email address, and password are required.' });
     }
 
+    const cleanName = String(name).trim();
+    const cleanEmail = String(email).trim().toLowerCase();
+    const cleanPassword = String(password).trim();
+    const cleanDept = (department && String(department).trim()) ? String(department).trim() : 'Campus Recruitment';
+    const cleanRole = role === 'admin' ? 'admin' : 'employee';
+
+    if (!cleanName) {
+      return res.status(400).json({ success: false, message: 'Employee full name cannot be blank.' });
+    }
+    if (!cleanEmail || !cleanEmail.includes('@')) {
+      return res.status(400).json({ success: false, message: 'A valid email address is required.' });
+    }
+    if (!cleanPassword) {
+      return res.status(400).json({ success: false, message: 'Password cannot be blank.' });
+    }
+
     // Enforce 50 employees maximum limit
-    if (role === 'employee') {
+    if (cleanRole === 'employee') {
       const activeCount = getActiveEmployeesCount(db);
       if (activeCount >= MAX_EMPLOYEES) {
         return res.status(400).json({
@@ -123,43 +139,49 @@ router.post('/users', (req, res) => {
     }
 
     // Check email uniqueness
-    const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
+    const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?)').get(cleanEmail);
     if (existing) {
-      return res.status(400).json({ success: false, message: `An account with email ${email.trim()} already exists.` });
+      return res.status(400).json({ success: false, message: `An account with email "${cleanEmail}" already exists. Please choose a different email.` });
     }
 
-    const insertResult = db.prepare(`
-      INSERT INTO users (name, email, password, role, department, status)
-      VALUES (?, ?, ?, ?, ?, 'active')
-    `).run(name.trim(), email.trim(), password.trim(), role, department.trim());
+    const insertTransaction = db.transaction(() => {
+      const insertResult = db.prepare(`
+        INSERT INTO users (name, email, password, role, department, status)
+        VALUES (?, ?, ?, ?, ?, 'active')
+      `).run(cleanName, cleanEmail, cleanPassword, cleanRole, cleanDept);
 
-    const newUserId = insertResult.lastInsertRowid;
+      const newUserId = insertResult.lastInsertRowid;
+
+      // Provide default initial SMTP configuration placeholder for the new employee
+      db.prepare(`
+        INSERT INTO smtp_accounts (user_id, name, host, port, secure, user, pass, from_name, from_email, reply_to, daily_limit, sent_today, is_active, priority)
+        VALUES (?, ?, 'smtp.gmail.com', 587, 0, ?, '', ?, ?, 'careers@aparaitech.org', 500, 0, 1, 1)
+      `).run(
+        newUserId,
+        `${cleanName} Sender`,
+        cleanEmail,
+        `${cleanName} | Aparaitech Recruitment`,
+        cleanEmail
+      );
+
+      return newUserId;
+    });
+
+    const newUserId = insertTransaction();
     const createdUser = db.prepare('SELECT id, name, email, role, department, status, created_at FROM users WHERE id = ?').get(newUserId);
-
-    // Provide default initial SMTP configuration placeholder for the new employee
-    db.prepare(`
-      INSERT INTO smtp_accounts (user_id, name, host, port, secure, user, pass, from_name, from_email, reply_to, daily_limit, sent_today, is_active, priority)
-      VALUES (?, ?, 'smtp.gmail.com', 587, 0, ?, '', ?, ?, 'careers@aparaitech.org', 500, 0, 1, 1)
-    `).run(
-      newUserId,
-      `${name.trim()} Sender`,
-      email.trim(),
-      `${name.trim()} | Aparaitech Recruitment`,
-      email.trim()
-    );
-
     const activeEmployees = getActiveEmployeesCount(db);
 
     res.status(201).json({
       success: true,
-      message: `Employee "${name.trim()}" added successfully! (${activeEmployees}/${MAX_EMPLOYEES} slots used)`,
+      message: `Employee "${cleanName}" added successfully! (${activeEmployees}/${MAX_EMPLOYEES} slots used)`,
       user: createdUser,
       maxEmployees: MAX_EMPLOYEES,
       activeEmployees,
       remainingSlots: Math.max(0, MAX_EMPLOYEES - activeEmployees)
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Error adding user/employee:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to add employee.' });
   }
 });
 
@@ -168,15 +190,22 @@ router.put('/users/:id', (req, res) => {
   try {
     const db = getDb();
     const { id } = req.params;
-    const { name, email, password, department, status, role } = req.body;
+    const { name, email, password, department, status, role } = req.body || {};
 
     const existing = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'User not found.' });
     }
 
+    const cleanName = name !== undefined ? String(name).trim() : existing.name;
+    const cleanEmail = email !== undefined ? String(email).trim().toLowerCase() : existing.email;
+    const cleanDept = department !== undefined ? String(department).trim() : existing.department;
+    const cleanStatus = status !== undefined ? String(status).trim() : existing.status;
+    const cleanRole = role !== undefined ? String(role).trim() : existing.role;
+    const cleanPassword = (password !== undefined && String(password).trim().length > 0) ? String(password).trim() : existing.password;
+
     // If reactivating or changing role to employee, verify 50 max capacity
-    if (existing.role === 'employee' && existing.status !== 'active' && status === 'active') {
+    if (existing.role === 'employee' && existing.status !== 'active' && cleanStatus === 'active') {
       const activeCount = getActiveEmployeesCount(db);
       if (activeCount >= MAX_EMPLOYEES) {
         return res.status(400).json({
@@ -187,10 +216,10 @@ router.put('/users/:id', (req, res) => {
     }
 
     // If changing email, check uniqueness
-    if (email && email.trim().toLowerCase() !== existing.email.toLowerCase()) {
-      const dup = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?').get(email.trim(), id);
+    if (cleanEmail && cleanEmail !== existing.email.toLowerCase()) {
+      const dup = db.prepare('SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?').get(cleanEmail, id);
       if (dup) {
-        return res.status(400).json({ success: false, message: 'Email is already in use by another account.' });
+        return res.status(400).json({ success: false, message: `Email "${cleanEmail}" is already in use by another account.` });
       }
     }
 
@@ -205,12 +234,12 @@ router.put('/users/:id', (req, res) => {
           updated_at = datetime('now')
       WHERE id = ?
     `).run(
-      name ? name.trim() : existing.name,
-      email ? email.trim() : existing.email,
-      (password && password.trim()) ? password.trim() : existing.password,
-      department !== undefined ? department.trim() : existing.department,
-      status || existing.status,
-      role || existing.role,
+      cleanName,
+      cleanEmail,
+      cleanPassword,
+      cleanDept,
+      cleanStatus,
+      cleanRole,
       id
     );
 
@@ -226,7 +255,8 @@ router.put('/users/:id', (req, res) => {
       remainingSlots: Math.max(0, MAX_EMPLOYEES - activeEmployees)
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Error updating employee:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to update employee.' });
   }
 });
 
@@ -245,14 +275,16 @@ router.delete('/users/:id', (req, res) => {
       return res.status(404).json({ success: false, message: 'Employee not found.' });
     }
 
-    // Delete associated personal SMTP accounts and reassign or delete templates/students
-    db.prepare('DELETE FROM smtp_accounts WHERE user_id = ?').run(id);
-    db.prepare('DELETE FROM templates WHERE user_id = ?').run(id);
-    // Keep students or set user_id to 1 (Admin)
-    db.prepare('UPDATE students SET user_id = 1 WHERE user_id = ?').run(id);
-    db.prepare('UPDATE campaigns SET user_id = 1 WHERE user_id = ?').run(id);
+    const deleteTransaction = db.transaction(() => {
+      // Delete associated personal SMTP accounts and reassign students/campaigns
+      db.prepare('DELETE FROM smtp_accounts WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM templates WHERE user_id = ?').run(id);
+      db.prepare('UPDATE students SET user_id = 1 WHERE user_id = ?').run(id);
+      db.prepare('UPDATE campaigns SET user_id = 1 WHERE user_id = ?').run(id);
+      db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    });
 
-    db.prepare('DELETE FROM users WHERE id = ?').run(id);
+    deleteTransaction();
 
     const activeEmployees = getActiveEmployeesCount(db);
 
@@ -264,7 +296,8 @@ router.delete('/users/:id', (req, res) => {
       remainingSlots: Math.max(0, MAX_EMPLOYEES - activeEmployees)
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error('Error deleting employee:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to delete employee.' });
   }
 });
 

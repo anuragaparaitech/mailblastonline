@@ -114,6 +114,10 @@ class App {
     }
   }
 
+  refreshUserHeader() {
+    this.updateUserUI();
+  }
+
   async refreshEnvironmentBadge() {
     try {
       const data = await api.getSettings();
