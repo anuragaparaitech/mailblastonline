@@ -1,0 +1,144 @@
+-- ==========================================================
+-- Aparaitech Software - Student Email Blast Database Schema
+-- ==========================================================
+
+-- Table: users (Admin & Employees with max 50 employee limit)
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'employee', -- 'admin', 'employee'
+    department TEXT DEFAULT 'Campus Recruitment',
+    status TEXT DEFAULT 'active',          -- 'active', 'inactive'
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+
+-- Table: students
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER DEFAULT 1,   -- Associated recruiter / employee
+    name TEXT NOT NULL,
+    email TEXT NOT NULL,
+    college TEXT NOT NULL,
+    phone TEXT,
+    branch TEXT DEFAULT 'Computer Science',
+    batch TEXT DEFAULT '2026',
+    status TEXT DEFAULT 'Active', -- 'Active', 'Unsubscribed', 'Placed', 'Blacklisted'
+    import_batch_id TEXT,        -- Unique ID for the bulk upload batch (e.g. batch_1723871234_iitb)
+    import_source TEXT DEFAULT 'Manual Entry', -- Name of spreadsheet file or source
+    tags TEXT DEFAULT '[]',       -- JSON array of tags, e.g. ["B.Tech", "Shortlisted", "Baramati"]
+    notes TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Index for fast lookup & filtering
+CREATE INDEX IF NOT EXISTS idx_students_college ON students(college);
+CREATE INDEX IF NOT EXISTS idx_students_batch ON students(batch);
+CREATE INDEX IF NOT EXISTS idx_students_email ON students(email);
+CREATE INDEX IF NOT EXISTS idx_students_status ON students(status);
+CREATE INDEX IF NOT EXISTS idx_students_import_batch ON students(import_batch_id);
+
+-- Table: templates
+CREATE TABLE IF NOT EXISTS templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,                     -- NULL = Global/system template, otherwise employee ID
+    name TEXT NOT NULL,
+    category TEXT DEFAULT 'Placement Drive', -- 'Placement Drive', 'Internship', 'Hackathon', 'Interview', 'Offer'
+    subject TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    tags_used TEXT DEFAULT '["{Name}", "{College}"]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Table: campaigns
+CREATE TABLE IF NOT EXISTS campaigns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER DEFAULT 1,           -- Recruiter / employee who created and sent this blast
+    title TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body_html TEXT NOT NULL,
+    apply_link TEXT DEFAULT 'https://aparaitech.org/apply', -- Dedicated application / apply now hyperlink
+    target_type TEXT DEFAULT 'all',      -- 'all', 'college', 'batch', 'selected'
+    target_filter TEXT DEFAULT '',       -- JSON filter metadata
+    total_recipients INTEGER DEFAULT 0,
+    sent_count INTEGER DEFAULT 0,
+    success_count INTEGER DEFAULT 0,
+    failed_count INTEGER DEFAULT 0,
+    status TEXT DEFAULT 'draft',         -- 'draft', 'in_progress', 'paused', 'completed', 'cancelled'
+    speed_eps REAL DEFAULT 0,            -- emails per second
+    started_at DATETIME,
+    completed_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Table: campaign_recipients
+CREATE TABLE IF NOT EXISTS campaign_recipients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    campaign_id INTEGER NOT NULL,
+    student_id INTEGER,
+    recipient_name TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    recipient_college TEXT,
+    recipient_phone TEXT,
+    status TEXT DEFAULT 'pending',       -- 'pending', 'sent', 'failed'
+    error_message TEXT DEFAULT '',
+    latency_ms INTEGER DEFAULT 0,
+    rendered_subject TEXT,
+    rendered_body TEXT,
+    sent_at DATETIME,
+    attempts INTEGER DEFAULT 0,
+    smtp_account_id INTEGER,
+    smtp_sender TEXT,
+    FOREIGN KEY(campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+    FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_camp_recip_camp_id ON campaign_recipients(campaign_id);
+CREATE INDEX IF NOT EXISTS idx_camp_recip_status ON campaign_recipients(status);
+
+-- Table: settings
+CREATE TABLE IF NOT EXISTS settings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER DEFAULT 1,
+    key TEXT NOT NULL,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, key)
+);
+
+-- Table: smtp_accounts (Multi-SMTP Senders Pool for Load Balancing & Auto-Rotation per Employee)
+CREATE TABLE IF NOT EXISTS smtp_accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER DEFAULT 1,              -- Owner employee / recruiter account
+    name TEXT NOT NULL,                     -- e.g. "Primary HR 1 - Gmail", "Backup Sender 2"
+    host TEXT NOT NULL DEFAULT 'smtp.gmail.com',
+    port INTEGER DEFAULT 587,
+    secure INTEGER DEFAULT 0,               -- 1 for 465 SSL, 0 for 587 TLS
+    user TEXT NOT NULL,                     -- e.g. "hr1@aparaitech.org"
+    pass TEXT NOT NULL,                     -- App password
+    from_name TEXT DEFAULT 'Aparaitech Recruitment Team',
+    from_email TEXT NOT NULL,
+    reply_to TEXT DEFAULT 'careers@aparaitech.org',
+    daily_limit INTEGER DEFAULT 500,        -- Max emails per 24 hours (e.g. 500 for Google, 100 for free)
+    sent_today INTEGER DEFAULT 0,           -- Count sent in current day
+    last_sent_date TEXT DEFAULT '',         -- YYYY-MM-DD to auto-reset daily count
+    is_active INTEGER DEFAULT 1,            -- 1: enabled, 0: disabled
+    priority INTEGER DEFAULT 1,             -- 1 = highest priority
+    last_used_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_smtp_accounts_active ON smtp_accounts(is_active);
+CREATE INDEX IF NOT EXISTS idx_smtp_accounts_priority ON smtp_accounts(priority);
