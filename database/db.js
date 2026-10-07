@@ -21,8 +21,18 @@ function getDb() {
     db.pragma('foreign_keys = ON');
 
     // Run schema migrations
-    const schemaSql = fs.readFileSync(SCHEMA_PATH, 'utf8');
-    db.exec(schemaSql);
+    let schemaSql = '';
+    if (fs.existsSync(SCHEMA_PATH)) {
+      schemaSql = fs.readFileSync(SCHEMA_PATH, 'utf8');
+    } else {
+      const altPath = path.join(process.cwd(), 'database', 'schema.sql');
+      if (fs.existsSync(altPath)) {
+        schemaSql = fs.readFileSync(altPath, 'utf8');
+      }
+    }
+    if (schemaSql) {
+      db.exec(schemaSql);
+    }
 
     // Migration: Ensure import_batch_id & import_source columns exist on students table
     try {

@@ -20,7 +20,7 @@ git push -u origin main
 
 1. Visit **[https://vercel.com/dashboard](https://vercel.com/dashboard)** and log in.
 2. Click **"Add New..."** &rarr; **"Project"**.
-3. Under **"Import Git Repository"**, select **`anuragaparaitech/mail-blast`** and click **"Import"**.
+3. Under **"Import Git Repository"**, select **`anuragaparaitech/mailblastonline`** (or your Vercel project **`mailblast3.0`**) and click **"Import"**.
 4. Configure Project Settings:
    - **Framework Preset**: *Other*
    - **Root Directory**: `./` (leave default)
