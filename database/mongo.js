@@ -142,6 +142,53 @@ async function ensureMongoIndexes(db) {
     await db.collection('campaign_recipients').createIndex({ campaign_id: 1 });
     await db.collection('campaign_recipients').createIndex({ status: 1 });
 
+    // Users collection
+    await db.collection('users').createIndex({ email: 1 }, { unique: true });
+    await db.collection('users').createIndex({ id: 1 });
+
+    // Auto-sync users from SQLite if any or seed defaults
+    try {
+      let defaultUsersList = [];
+      try {
+        const sqlite = getDb();
+        defaultUsersList = sqlite.prepare('SELECT id, name, email, password, role, department, status, created_at, updated_at FROM users').all();
+      } catch (e) {}
+
+      if (!defaultUsersList || defaultUsersList.length === 0) {
+        defaultUsersList = [
+          { id: 1, name: 'Aparaitech Admin', email: 'admin@aparaitech.org', password: 'admin123', role: 'admin', department: 'Executive Management', status: 'active' },
+          { id: 2, name: 'Anurag K', email: 'anurag.emp@aparaitech.org', password: 'emp123', role: 'employee', department: 'Campus Outreach', status: 'active' },
+          { id: 3, name: 'Vivek S', email: 'vivek.emp@aparaitech.org', password: 'emp123', role: 'employee', department: 'Tech Hiring', status: 'active' },
+          { id: 4, name: 'Kshitij M', email: 'kshitij.emp@aparaitech.org', password: 'emp123', role: 'employee', department: 'HR Operations', status: 'active' }
+        ];
+      }
+
+      const userOps = defaultUsersList.map(u => ({
+        updateOne: {
+          filter: { email: u.email.toLowerCase() },
+          update: {
+            $setOnInsert: {
+              id: u.id,
+              name: u.name,
+              email: u.email.toLowerCase(),
+              password: u.password,
+              role: u.role || 'employee',
+              department: u.department || 'Campus Recruitment',
+              status: u.status || 'active',
+              created_at: u.created_at || new Date().toISOString(),
+              updated_at: u.updated_at || new Date().toISOString()
+            }
+          },
+          upsert: true
+        }
+      }));
+      if (userOps.length > 0) {
+        await db.collection('users').bulkWrite(userOps);
+      }
+    } catch (userErr) {
+      console.warn('Auto-sync default users to Mongo note:', userErr.message);
+    }
+
     // SMTP accounts collection
     await db.collection('smtp_accounts').createIndex({ is_active: 1 });
 
@@ -298,9 +345,35 @@ async function syncSqliteToMongo(uri = null) {
     summary.settings = settings.length;
   }
 
+  // 5. Sync Users
+  const users = sqlite.prepare('SELECT * FROM users').all();
+  if (users.length > 0) {
+    const userOps = users.map(u => ({
+      updateOne: {
+        filter: { email: u.email.toLowerCase() },
+        update: {
+          $set: {
+            id: u.id,
+            name: u.name,
+            email: u.email.toLowerCase(),
+            password: u.password,
+            role: u.role,
+            department: u.department,
+            status: u.status,
+            created_at: u.created_at,
+            updated_at: u.updated_at
+          }
+        },
+        upsert: true
+      }
+    }));
+    await mongoDb.collection('users').bulkWrite(userOps);
+    summary.users = users.length;
+  }
+
   return {
     success: true,
-    message: `Successfully synchronized ${summary.students} candidates, ${summary.templates} templates, and ${summary.smtp_accounts} SMTP accounts to MongoDB Atlas!`,
+    message: `Successfully synchronized ${summary.students} candidates, ${summary.templates} templates, ${summary.users || 0} employees, and ${summary.smtp_accounts} SMTP accounts to MongoDB Atlas!`,
     summary
   };
 }

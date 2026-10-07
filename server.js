@@ -33,6 +33,14 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(authContext);
 
+// Catch malformed JSON payload errors immediately
+app.use((err, req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ success: false, message: 'Invalid JSON payload received.' });
+  }
+  next(err);
+});
+
 // Serve static frontend assets
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -65,6 +73,23 @@ app.get('*', (req, res) => {
     return res.status(404).json({ success: false, message: 'API route not found' });
   }
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// Global Error Handling Middleware
+app.use((err, req, res, next) => {
+  console.error('Unhandled request error:', err);
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error occurred.'
+  });
+});
+
+// Global Process Crash Prevention
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception caught:', err.message);
+});
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection caught:', reason);
 });
 
 // Start Server
