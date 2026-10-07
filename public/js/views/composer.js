@@ -13,9 +13,9 @@ const ComposerView = {
     targetBatchId: '',
     targetBatchName: '',
     lastFocusedField: 'subject', // 'subject' or 'body'
-    campaignTitle: 'Aparaitech Campus Placement Outreach 2026',
-    applyLink: 'https://aparaitech.org/apply',
-    subject: 'Campus Placement Drive 2026: Career Opportunity for {Name} from {College}',
+    campaignTitle: '',
+    applyLink: '',
+    subject: '',
     bodyHtml: ''
   },
 

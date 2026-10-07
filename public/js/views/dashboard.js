@@ -112,9 +112,9 @@ const DashboardView = {
             <div style="display: flex; flex-direction: column; height: 100%; justify-content: space-between;">
               <div>
                 <span class="badge" style="background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); margin-bottom: 12px;">READY TO BLAST</span>
-                <h3 style="font-family: var(--font-heading); font-size: 1.35rem; font-weight: 700; color: #ffffff; margin-bottom: 8px;">Aparaitech Campus Drive 2026</h3>
+                <h3 style="font-family: var(--font-heading); font-size: 1.35rem; font-weight: 700; color: #ffffff; margin-bottom: 8px;">Launch Placement Outreach</h3>
                 <p style="color: #94a3b8; font-size: 0.88rem; line-height: 1.6; margin-bottom: 18px;">
-                  Quickly launch personalized placement invitations with pre-filled tags ({Name}, {College}, {Package}) to all ${stats.totalStudents || 0} registered candidates with real-time SSE progress tracking.
+                  Quickly launch personalized placement emails with dynamic tags ({Name}, {College}, etc.) to registered candidates with real-time SSE progress tracking.
                 </p>
               </div>
 
